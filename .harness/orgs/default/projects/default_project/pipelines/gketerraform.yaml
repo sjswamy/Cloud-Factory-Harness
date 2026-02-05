@@ -80,6 +80,32 @@ pipeline:
                       cd "<+pipeline.variables.tfDir>"
                       echo "Plan created: $(ls -la tfplan tfplan.json)"
     - stage:
+        name: Manual Approval
+        identifier: Manual_Approval
+        description: ""
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  name: Approval
+                  identifier: Approval
+                  type: HarnessApproval
+                  timeout: 1d
+                  spec:
+                    approvalMessage: |-
+                      Please review the following information
+                      and approve the pipeline progression
+                    includePipelineExecutionHistory: true
+                    approvers:
+                      minimumCount: 1
+                      disallowPipelineExecutor: false
+                      userGroups:
+                        - account._account_all_users
+                    isAutoRejectEnabled: false
+                    approverInputs: []
+        tags: {}
+    - stage:
         name: Terraform_Apply
         identifier: Terraform_Apply
         type: CI
