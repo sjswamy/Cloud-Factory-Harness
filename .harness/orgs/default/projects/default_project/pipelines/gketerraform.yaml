@@ -1,0 +1,129 @@
+pipeline:
+  name: gke-terraform
+  identifier: gketerraform
+  projectIdentifier: default_project
+  orgIdentifier: default
+  tags: {}
+  variables:
+    - name: tfWorkspace
+      type: String
+      value: dev
+    - name: tfVarFile
+      type: String
+      value: env/dev.tfvars
+    - name: tfDir
+      type: String
+      value: infra/terraform
+    - name: runApply
+      type: String
+      value: "false"
+  properties:
+    ci:
+      codebase:
+        connectorRef: github_connector
+        repoName: your-infra-repo
+        build: <+input>
+  stages:
+    - stage:
+        name: Terraform_Plan
+        identifier: Terraform_Plan
+        type: CI
+        spec:
+          cloneCodebase: true
+          platform:
+            os: Windows
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  name: Terraform Init
+                  identifier: tf_init
+                  type: Run
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -euo pipefail
+                      cd "<+pipeline.variables.tfDir>"
+
+                      terraform version
+                      terraform init -input=false
+              - step:
+                  name: Terraform Plan
+                  identifier: tf_plan
+                  type: Run
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -euo pipefail
+                      cd "<+pipeline.variables.tfDir>"
+
+                      terraform workspace select "<+pipeline.variables.tfWorkspace>" \
+                        || terraform workspace new "<+pipeline.variables.tfWorkspace>"
+
+                      terraform plan \
+                        -input=false \
+                        -var-file="<+pipeline.variables.tfVarFile>" \
+                        -out=tfplan
+
+                      terraform show -json tfplan > tfplan.json
+              - step:
+                  name: Save Plan as Output
+                  identifier: save_plan
+                  type: Run
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -euo pipefail
+                      cd "<+pipeline.variables.tfDir>"
+                      echo "Plan created: $(ls -la tfplan tfplan.json)"
+    - stage:
+        name: Terraform_Apply
+        identifier: Terraform_Apply
+        type: CI
+        spec:
+          when:
+            pipelineStatus: Success
+            condition: <+pipeline.variables.runApply> == "true"
+          cloneCodebase: true
+          platform:
+            os: Windows
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  name: Terraform Apply
+                  identifier: tf_apply
+                  type: Run
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -euo pipefail
+                      cd "<+pipeline.variables.tfDir>"
+
+                      terraform init -input=false
+
+                      terraform workspace select "<+pipeline.variables.tfWorkspace>"
+
+                      # Recreate plan for immutability (preferred) OR apply saved plan if persisted.
+                      terraform plan \
+                        -input=false \
+                        -var-file="<+pipeline.variables.tfVarFile>" \
+                        -out=tfplan
+
+                      terraform apply -input=false -auto-approve tfplan
+              - step:
+                  name: Output
+                  identifier: tf_output
+                  type: Run
+                  spec:
+                    shell: Sh
+                    command: |
+                      set -euo pipefail
+                      cd "<+pipeline.variables.tfDir>"
+                      terraform output || true
